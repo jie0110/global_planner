@@ -15,6 +15,11 @@ Weighted A* creates neighbors lazily and rejects transitions that exceed the
 configured horizontal distance, step height or slope. This avoids both a dense
 3D array and a stored edge graph.
 
+At startup, the planner labels connected terrain components using the same
+motion constraints. Requests whose endpoints belong to different components
+fail immediately. During search, generation-stamped open/closed arrays avoid
+full-map resets and guarantee that each node is formally expanded at most once.
+
 After search, a terrain-validated line-of-sight pass removes grid zigzags. Every
 shortcut is sampled against the inflated traversable surface and checked with
 the same step and slope limits. Stairs are not flattened when their height
@@ -63,6 +68,7 @@ ros2 launch global_planner global_planner.launch.py pcd_file:=/absolute/map.pcd
 - `path_z_offset`: height added to every published path pose.
 - `heuristic_weight`: `1.0` is ordinary A*; a slightly larger value is faster
   but may return a mildly longer route.
+- `enable_connectivity_precheck`: rejects disconnected endpoints before A*.
 - `enable_path_smoothing`: enables terrain-validated line-of-sight smoothing.
 
 The defaults are an initial baseline, not certified hardware limits. Validate

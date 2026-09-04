@@ -54,6 +54,8 @@ GlobalPlannerNode::GlobalPlannerNode()
   planner_config.step_weight = declare_parameter<double>("step_weight", 1.0);
   planner_config.heuristic_weight = declare_parameter<double>("heuristic_weight", 1.15);
   planner_config.planning_timeout = declare_parameter<double>("planning_timeout", 2.0);
+  planner_config.enable_connectivity_precheck =
+    declare_parameter<bool>("enable_connectivity_precheck", true);
   planner_config.enable_path_smoothing = declare_parameter<bool>("enable_path_smoothing", true);
   planner_config.smoothing_sample_step =
     declare_parameter<double>("smoothing_sample_step", 0.10);
@@ -94,6 +96,10 @@ GlobalPlannerNode::GlobalPlannerNode()
     terrain_map_.inflatedNodeCount(), terrain_map_.nodes().size(), load_ms);
 
   planner_ = std::make_unique<WeightedAStar>(terrain_map_, planner_config);
+  RCLCPP_INFO(
+    get_logger(), "Topology ready: components=%zu largest=%zu build=%.1f ms",
+    planner_->componentCount(), planner_->largestComponentSize(),
+    planner_->connectivityBuildTimeMs());
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -240,18 +246,11 @@ void GlobalPlannerNode::workerLoop()
     }
     const auto path = makePath(result, goal);
     path_pub_->publish(path);
-    const auto & final_pose = path.poses.back().pose;
     RCLCPP_INFO(
       get_logger(),
       "Path published: raw=%zu smoothed=%zu poses=%zu length=%.2f m expanded=%zu time=%.1f ms",
       result.raw_node_count, result.node_ids.size(), path.poses.size(), result.path_length,
       result.expanded_nodes, result.planning_time_ms);
-    RCLCPP_INFO(
-      get_logger(),
-      "Final pose: position=[%.3f %.3f %.3f] orientation=[%.6f %.6f %.6f %.6f]",
-      final_pose.position.x, final_pose.position.y, final_pose.position.z,
-      final_pose.orientation.x, final_pose.orientation.y,
-      final_pose.orientation.z, final_pose.orientation.w);
   }
 }
 

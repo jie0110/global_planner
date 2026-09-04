@@ -26,7 +26,7 @@ global_planner:
     layer_merge_height: 0.12
 
     # 最低可通行强度；低于该数值的原始点视为不可通行。
-    min_traversability: 128.0
+    min_traversability: 50.0
 
     # 一个体素被保留为可通行节点所需的最小可通行点比例，范围为 0～1。
     min_traversable_fraction: 0.60
@@ -71,10 +71,13 @@ global_planner:
     step_weight: 1.0
 
     # Weighted A* 启发函数权重；1.0 为普通 A*，增大可提速但可能略微增加路径长度。
-    heuristic_weight: 1.5
+    heuristic_weight: 1.15
 
     # 单次搜索超时时间（秒）；小于等于 0 表示不限制。
-    planning_timeout: 0.0
+    planning_timeout: 3.0
+
+    # 是否在启动时计算地形连通分量；开启后不可达的起终点会立即返回。
+    enable_connectivity_precheck: true
 
     # 是否启用经过安全性复核的路径捷径平滑，用于减少栅格锯齿。
     enable_path_smoothing: true

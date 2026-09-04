@@ -19,8 +19,17 @@ constexpr double kPi = 3.14159265358979323846;
 
 WeightedAStar::WeightedAStar(const TerrainMap & map, PlannerConfig config)
 : map_(map), config_(std::move(config)),
-  g_score_(map.nodes().size()), parent_(map.nodes().size()), stamp_(map.nodes().size(), 0U)
+  g_score_(map.nodes().size()), parent_(map.nodes().size()), stamp_(map.nodes().size(), 0U),
+  closed_stamp_(map.nodes().size(), 0U),
+  component_id_(map.nodes().size(), std::numeric_limits<uint32_t>::max())
 {
+  if (config_.enable_connectivity_precheck) {
+    buildConnectedComponents();
+  } else if (!map.nodes().empty()) {
+    std::fill(component_id_.begin(), component_id_.end(), 0U);
+    component_count_ = 1U;
+    largest_component_size_ = map.nodes().size();
+  }
 }
 
 PlanResult WeightedAStar::plan(
@@ -34,9 +43,16 @@ PlanResult WeightedAStar::plan(
     result.message = "start or goal node id is out of range";
     return result;
   }
+  if (config_.enable_connectivity_precheck && component_id_[start_id] != component_id_[goal_id]) {
+    result.message = "start and goal are in different traversable components";
+    result.planning_time_ms = 1000.0 * std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - begin_time).count();
+    return result;
+  }
 
   if (++search_stamp_ == 0U) {
     std::fill(stamp_.begin(), stamp_.end(), 0U);
+    std::fill(closed_stamp_.begin(), closed_stamp_.end(), 0U);
     search_stamp_ = 1U;
   }
 
@@ -54,6 +70,10 @@ PlanResult WeightedAStar::plan(
     if (stamp_[current.id] != search_stamp_ || current.g > g_score_[current.id] + 1e-5F) {
       continue;
     }
+    if (closed_stamp_[current.id] == search_stamp_) {
+      continue;
+    }
+    closed_stamp_[current.id] = search_stamp_;
     if (current.id == goal_id) {
       found = true;
       break;
@@ -87,6 +107,9 @@ PlanResult WeightedAStar::plan(
           continue;
         }
         for (uint32_t neighbor_id = range->begin; neighbor_id < range->end; ++neighbor_id) {
+          if (closed_stamp_[neighbor_id] == search_stamp_) {
+            continue;
+          }
           double distance = 0.0;
           double slope = 0.0;
           if (!traversableEdge(current.id, neighbor_id, &distance, &slope)) {
@@ -224,6 +247,57 @@ std::vector<uint32_t> WeightedAStar::smoothPath(const std::vector<uint32_t> & pa
     anchor = selected;
   }
   return smoothed;
+}
+
+void WeightedAStar::buildConnectedComponents()
+{
+  const auto begin_time = std::chrono::steady_clock::now();
+  const auto & nodes = map_.nodes();
+  constexpr uint32_t kUnassigned = std::numeric_limits<uint32_t>::max();
+  std::vector<uint32_t> queue;
+
+  for (uint32_t seed = 0U; seed < nodes.size(); ++seed) {
+    if (component_id_[seed] != kUnassigned) {
+      continue;
+    }
+    const uint32_t component = static_cast<uint32_t>(component_count_++);
+    component_id_[seed] = component;
+    queue.clear();
+    queue.push_back(seed);
+    std::size_t head = 0U;
+
+    while (head < queue.size()) {
+      const uint32_t current_id = queue[head++];
+      const auto & current = nodes[current_id];
+      for (int dx = -config_.neighbor_cell_radius; dx <= config_.neighbor_cell_radius; ++dx) {
+        for (int dy = -config_.neighbor_cell_radius; dy <= config_.neighbor_cell_radius; ++dy) {
+          if (dx == 0 && dy == 0) {
+            continue;
+          }
+          const NodeRange * range = map_.findColumn(current.ix + dx, current.iy + dy);
+          if (range == nullptr) {
+            continue;
+          }
+          for (uint32_t neighbor = range->begin; neighbor < range->end; ++neighbor) {
+            if (component_id_[neighbor] != kUnassigned) {
+              continue;
+            }
+            double distance = 0.0;
+            double slope = 0.0;
+            if (!traversableEdge(current_id, neighbor, &distance, &slope)) {
+              continue;
+            }
+            component_id_[neighbor] = component;
+            queue.push_back(neighbor);
+          }
+        }
+      }
+    }
+    largest_component_size_ = std::max(largest_component_size_, queue.size());
+  }
+
+  connectivity_build_time_ms_ = 1000.0 * std::chrono::duration<double>(
+    std::chrono::steady_clock::now() - begin_time).count();
 }
 
 double WeightedAStar::heuristic(uint32_t from, uint32_t to) const

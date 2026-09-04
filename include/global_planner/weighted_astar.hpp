@@ -25,6 +25,7 @@ struct PlannerConfig
   double step_weight{1.0};
   double heuristic_weight{1.15};
   double planning_timeout{2.0};
+  bool enable_connectivity_precheck{true};
   bool enable_path_smoothing{true};
   double smoothing_sample_step{0.10};
   double smoothing_xy_tolerance{0.16};
@@ -54,6 +55,10 @@ public:
     const std::atomic<uint64_t> * generation = nullptr,
     uint64_t expected_generation = 0);
 
+  std::size_t componentCount() const {return component_count_;}
+  std::size_t largestComponentSize() const {return largest_component_size_;}
+  double connectivityBuildTimeMs() const {return connectivity_build_time_ms_;}
+
 private:
   struct QueueEntry
   {
@@ -75,6 +80,7 @@ private:
   double edgeCost(uint32_t from, uint32_t to, double distance, double slope) const;
   bool hasLineOfSight(uint32_t from, uint32_t to) const;
   std::vector<uint32_t> smoothPath(const std::vector<uint32_t> & path) const;
+  void buildConnectedComponents();
   void touch(uint32_t id);
 
   const TerrainMap & map_;
@@ -82,7 +88,12 @@ private:
   std::vector<float> g_score_;
   std::vector<int32_t> parent_;
   std::vector<uint32_t> stamp_;
+  std::vector<uint32_t> closed_stamp_;
+  std::vector<uint32_t> component_id_;
   uint32_t search_stamp_{0};
+  std::size_t component_count_{0};
+  std::size_t largest_component_size_{0};
+  double connectivity_build_time_ms_{0.0};
 };
 
 }  // namespace global_planner

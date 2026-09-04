@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -56,6 +58,7 @@ TEST(WeightedAStar, PlansAcrossTraversableSteps)
   EXPECT_TRUE(result.success) << result.message;
   EXPECT_EQ(result.raw_node_count, 8U);
   EXPECT_EQ(result.node_ids.size(), 2U);
+  EXPECT_LE(result.expanded_nodes, map.nodes().size());
 }
 
 TEST(WeightedAStar, RejectsStepAboveRobotLimit)
@@ -77,6 +80,8 @@ TEST(WeightedAStar, RejectsStepAboveRobotLimit)
   gp::WeightedAStar planner(map, planner_config);
   const auto result = planner.plan(0U, 1U);
   EXPECT_FALSE(result.success);
+  EXPECT_EQ(result.expanded_nodes, 0U);
+  EXPECT_EQ(result.message, "start and goal are in different traversable components");
 }
 
 TEST(TerrainMap, InflationIsLimitedToNearbyHeightLayer)
@@ -133,4 +138,43 @@ TEST(WeightedAStar, SmoothingRemovesGridZigzagsButDoesNotCrossHazard)
   ASSERT_TRUE(result.success) << result.message;
   EXPECT_LT(result.node_ids.size(), result.raw_node_count);
   EXPECT_GT(result.node_ids.size(), 2U);
+  EXPECT_LE(result.expanded_nodes, map.nodes().size());
+}
+
+TEST(ActualMapBenchmark, LongDistanceRoute)
+{
+  const char * pcd_path = std::getenv("GLOBAL_PLANNER_TEST_PCD");
+  if (pcd_path == nullptr) {
+    GTEST_SKIP() << "set GLOBAL_PLANNER_TEST_PCD to run the real-map benchmark";
+  }
+
+  gp::TerrainMapConfig map_config;
+  map_config.resolution_xy = 0.20;
+  map_config.resolution_z = 0.10;
+  map_config.layer_merge_height = 0.12;
+  map_config.min_traversability = 128.0;
+  map_config.min_traversable_fraction = 0.60;
+  map_config.robot_radius = 0.10;
+  map_config.inflation_vertical_tolerance = 0.08;
+  map_config.min_inflation_obstacle_fraction = 0.50;
+  gp::TerrainMap map(map_config);
+  std::string error;
+  ASSERT_TRUE(map.loadPcd(pcd_path, &error)) << error;
+
+  gp::PlannerConfig planner_config;
+  planner_config.planning_timeout = 0.0;
+  gp::WeightedAStar planner(map, planner_config);
+  const int32_t start = map.nearestNode(26.90, -181.30, -17.96, 1.0, 1.0);
+  const int32_t goal = map.nearestNode(-112.10, 23.50, -15.21, 1.0, 1.0);
+  ASSERT_GE(start, 0);
+  ASSERT_GE(goal, 0);
+
+  const auto result = planner.plan(static_cast<uint32_t>(start), static_cast<uint32_t>(goal));
+  std::cout << "nodes=" << map.nodes().size() <<
+    " components=" << planner.componentCount() <<
+    " topology_ms=" << planner.connectivityBuildTimeMs() <<
+    " expanded=" << result.expanded_nodes <<
+    " planning_ms=" << result.planning_time_ms << std::endl;
+  ASSERT_TRUE(result.success) << result.message;
+  EXPECT_LE(result.expanded_nodes, map.nodes().size());
 }
